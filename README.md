@@ -1,7 +1,4 @@
-```markdown
 # IT Automation Tools
-
-## Overview
 
 This repository offers a suite of Python-based automation tools designed to streamline various IT tasks, enhancing efficiency and productivity.
 
