@@ -4,7 +4,37 @@ This repository offers a suite of Python-based automation tools designed to stre
 
 ## Tools Included
 
-- **JSON to CSV**: Combines one or more JSON and converts them to CSV using `Polars`.
+- **JSON to CSV**: Combines one or more JSON files into a single CSV using the `Polars` library.
+
+### JSON to CSV Script
+
+The `json_to_csv.py` script provides functionality to:
+
+1. Load JSON data from multiple files.
+2. Validate that the files contain a list of dictionaries.
+3. Combine the data into a single dataset.
+4. Save the dataset as a CSV file with a user-specified name in the directory of choice.
+
+#### How to Use
+
+1. Run the script from the command line:
+   ```bash
+   python json_to_csv.py <file1.json> <file2.json> ... <fileN.json>
+   ```
+2. Follow the on-screen prompts to name the output CSV file.
+
+### Example
+
+Suppose you have two JSON files, `data1.json` and `data2.json`. You can convert them into a single CSV file as follows:
+```bash
+python json_to_csv.py data1.json data2.json
+```
+When prompted, enter the desired filename (e.g., `combined_data.csv`).
+
+### Error Handling
+
+- If a specified file doesn't exist, the script raises a `FileNotFoundError`.
+- Only JSON files containing a list of dictionaries are accepted. Otherwise, a `ValueError` is raised.
 
 ## Prerequisites
 
@@ -18,15 +48,6 @@ Install dependencies using pip:
 pip install polars
 ```
 
-Follow the on-screen instructions or modify the script parameters as needed.
-
 ## Contributions
 
 Contributions are welcome. Please fork the repository, create a new branch for your feature or bug fix, and submit a pull request.
-
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-```
-
-*Note: This README is based on standard practices for similar repositories. If specific details about the tools are available, please provide them to enhance the documentation.* 
