@@ -40,7 +40,7 @@ def save_dataframe_to_csv(data: List[Dict[str, Any]], filename: str, output_dir:
     output_path = os.path.expanduser(os.path.join(output_dir, filename))
 
     # Create Polars DataFrame and write to CSV
-    df = pl.DataFrame(data)
+    df = pl.DataFrame(data).select(pl.all().shrink_dtype())
     df.write_csv(output_path, separator=",")
 
     return output_path
