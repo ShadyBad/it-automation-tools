@@ -12,7 +12,7 @@ The `json_to_csv.py` script provides functionality to:
 
 1. Load JSON data from multiple files.
 2. Validate that the files contain a list of dictionaries.
-3. Combine the data into a single dataset.
+3. Combine the data into a single dataset shrinking the dtypes for efficiency.
 4. Save the dataset as a CSV file with a user-specified name in the directory of choice.
 
 #### How to Use
