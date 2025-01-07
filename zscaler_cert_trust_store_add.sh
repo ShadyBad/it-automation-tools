@@ -87,16 +87,16 @@ else
     echo "Java keytool not detected. Skipping."
 fi
 
-# Mozilla Firefox
-# Add the Zscaler Root CA to Firefox profiles
-if [[ -d ~/Library/Application\ Support/Firefox/Profiles ]]; then
-    echo "Adding Zscaler Root CA to Firefox profiles..."
-    for PROFILE in ~/Library/Application\ Support/Firefox/Profiles/*; do
-        certutil -A -n "Zscaler Root CA" -t "TCu,Cu,Tu" -i "$CERT_PATH" -d sql:"$PROFILE"
-    done
-else
-    echo "Firefox profiles not found. Skipping."
-fi
+# # Mozilla Firefox
+# # Add the Zscaler Root CA to Firefox profiles
+# if [[ -d ~/Library/Application\ Support/Firefox/Profiles ]]; then
+#     echo "Adding Zscaler Root CA to Firefox profiles..."
+#     for PROFILE in ~/Library/Application\ Support/Firefox/Profiles/*; do
+#         certutil -A -n "Zscaler Root CA" -t "TCu,Cu,Tu" -i "$CERT_PATH" -d sql:"$PROFILE"
+#     done
+# else
+#     echo "Firefox profiles not found. Skipping."
+# fi
 
 # Curl
 # Configure Curl to use the Zscaler Root CA
