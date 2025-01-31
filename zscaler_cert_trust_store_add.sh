@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # This script is used to configure SSL inspection on macOS for use with Zscaler.
-# It extracts the Zscaler certificate from the system keychain, and configures
+# It extracts the Zscaler certificate from the system keychain and configures
 # various command-line tools to trust the certificate.
 #
-# The script is intended to be run as root, and will escalate privileges if necessary.
+# The script is intended to be run as root and will escalate privileges if necessary.
 
 # Ensure the script runs as root
 if [[ $EUID -ne 0 ]]; then
@@ -13,7 +13,7 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# Set HOME for correct Git execution
+# Set HOME for correct execution (fixes Git and other tools)
 export HOME="/var/root"
 
 # Start Execution Timer
@@ -33,10 +33,17 @@ PIP_CONF_PATH="$HOME/.pip/pip.conf"
 CURL_CA_BUNDLE="$HOME/.ssl_certs/zscaler-ca.crt"
 GIT_SSL_CERT_PATH="/usr/local/share/ca-certificates"
 SNOWFLAKE_ODBC_CERT_PATH="/usr/local/share/ca-certificates"
+GCP_CAFILE="$HOME/.config/gcloud/custom-ca-cert.crt"
+RUST_CONFIG="$HOME/.cargo/config"
+SF_CA_ENV="NODE_EXTRA_CA_CERTS"
+COMPOSER_CA_ENV="COMPOSER_CAFILE"
+RUBY_SSL_ENV="SSL_CERT_FILE"
 
 # Ensure writable directories exist
 mkdir -p "$BACKUP_DIR"
 mkdir -p "$(dirname "$CURL_CA_BUNDLE")"
+mkdir -p "$(dirname "$GCP_CAFILE")"
+mkdir -p "$(dirname "$RUST_CONFIG")"
 
 # Redirect logs for Kandji
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -92,80 +99,56 @@ else
   exit 1
 fi
 
-### Configure NPM
-if command -v npm &>/dev/null; then
-  echo "Configuring NPM SSL settings..."
-  backup_config_file "$HOME/.npmrc"
-  append_if_missing "$HOME/.npmrc" "cafile=$NPM_CAFILE"
+### Configure Google Cloud SDK
+if command -v gcloud &>/dev/null; then
+  echo "Configuring Google Cloud SDK SSL settings..."
+  backup_config_file "$GCP_CAFILE"
+  cp "$CERT_PATH" "$GCP_CAFILE"
+  gcloud config set core/custom_ca_certs_file "$GCP_CAFILE"
+  echo "Google Cloud SDK now trusts the Zscaler certificate."
 else
-  echo "NPM is not installed. Skipping configuration."
+  echo "Google Cloud SDK is not installed. Skipping configuration."
 fi
 
-### Configure PIP
-if command -v pip &>/dev/null; then
-  echo "Configuring PIP SSL settings..."
-  mkdir -p ~/.pip
-  backup_config_file "$PIP_CONF_PATH"
-  append_if_missing "$PIP_CONF_PATH" "[global]"
-  append_if_missing "$PIP_CONF_PATH" "cert = $NPM_CAFILE"
+### Configure Rust (Cargo)
+if command -v cargo &>/dev/null; then
+  echo "Configuring Rust (Cargo) SSL settings..."
+  backup_config_file "$RUST_CONFIG"
+  append_if_missing "$RUST_CONFIG" "[http]"
+  append_if_missing "$RUST_CONFIG" "cainfo = \"$CURL_CA_BUNDLE\""
+  echo "Rust (Cargo) now trusts the Zscaler certificate."
 else
-  echo "PIP is not installed. Skipping configuration."
+  echo "Rust (Cargo) is not installed. Skipping configuration."
 fi
 
-### Configure Docker
-if command -v docker &>/dev/null; then
-  if [[ -f "$DOCKER_CERT_FILE" ]]; then
-    echo "Docker SSL certificate is already configured."
-  else
-    echo "Configuring Docker SSL settings..."
-    mkdir -p "$DOCKER_CERT_PATH"
-    cp "$CERT_PATH" "$DOCKER_CERT_FILE"
-    chmod 644 "$DOCKER_CERT_FILE"
-    echo "Docker now trusts the Zscaler certificate."
-  fi
+### Configure Salesforce CLI
+if command -v sf &>/dev/null || command -v sfdx &>/dev/null; then
+  echo "Configuring Salesforce CLI SSL settings..."
+  export $SF_CA_ENV="$CURL_CA_BUNDLE"
+  append_if_missing "$HOME/.zshrc" "export $SF_CA_ENV=$CURL_CA_BUNDLE"
+  echo "Salesforce CLI now trusts the Zscaler certificate."
 else
-  echo "Docker is not installed. Skipping configuration."
+  echo "Salesforce CLI is not installed. Skipping configuration."
 fi
 
-### Configure cURL (Per-User Certificate)
-if command -v curl &>/dev/null; then
-  echo "Configuring cURL SSL settings..."
-  cp "$CERT_PATH" "$CURL_CA_BUNDLE"
-
-  # Ensure .zshrc is modified in the correct location
-  ZSHRC_FILE="$HOME/.zshrc"
-  append_if_missing "$ZSHRC_FILE" "export CURL_CA_BUNDLE=$CURL_CA_BUNDLE"
-
-  echo "cURL is now using a custom CA bundle for SSL trust."
+### Configure Composer (PHP)
+if command -v composer &>/dev/null; then
+  echo "Configuring Composer SSL settings..."
+  export $COMPOSER_CA_ENV="$CURL_CA_BUNDLE"
+  append_if_missing "$HOME/.zshrc" "export $COMPOSER_CA_ENV=$CURL_CA_BUNDLE"
+  echo "Composer now trusts the Zscaler certificate."
 else
-  echo "cURL is not installed. Skipping configuration."
+  echo "Composer (PHP) is not installed. Skipping configuration."
 fi
 
-### Configure Git
-if command -v git &>/dev/null; then
-  if git config --global --get http.sslCAinfo | grep -q "$GIT_SSL_CERT_PATH"; then
-    echo "Git SSL certificate is already configured."
-  else
-    echo "Configuring Git SSL settings..."
-    cp "$CERT_PATH" "$GIT_SSL_CERT_PATH"
-    git config --global http.sslCAinfo "$GIT_SSL_CERT_PATH/$(basename "$CERT_PATH")"
-    echo "Git now trusts the Zscaler certificate."
-  fi
+### Configure Ruby
+if command -v ruby &>/dev/null; then
+  echo "Configuring Ruby SSL settings..."
+  export $RUBY_SSL_ENV="$CURL_CA_BUNDLE"
+  append_if_missing "$HOME/.zshrc" "export $RUBY_SSL_ENV=$CURL_CA_BUNDLE"
+  echo "Ruby now trusts the Zscaler certificate."
 else
-  echo "Git is not installed. Skipping configuration."
-fi
-
-### Configure Snowflake ODBC
-if [[ -d "$SNOWFLAKE_ODBC_CERT_PATH" ]]; then
-  if [[ -f "$SNOWFLAKE_ODBC_CERT_PATH/zscaler.crt" ]]; then
-    echo "Snowflake ODBC SSL certificate is already configured."
-  else
-    echo "Configuring Snowflake ODBC SSL settings..."
-    cp "$CERT_PATH" "$SNOWFLAKE_ODBC_CERT_PATH"
-    echo "Snowflake ODBC now trusts the Zscaler certificate."
-  fi
-else
-  echo "Snowflake ODBC Driver is not installed. Skipping configuration."
+  echo "Ruby is not installed. Skipping configuration."
 fi
 
 ### Cleanup Temporary Files
@@ -179,4 +162,4 @@ END_TIME=$(date +%s)
 ELAPSED_TIME=$((END_TIME - START_TIME))
 echo "Script completed in $ELAPSED_TIME seconds." >> "$LOG_FILE"
 
-echo "SSL Inspection configuration complete."
+echo "SSL Inspection config complete."
