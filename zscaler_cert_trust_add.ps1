@@ -1,10 +1,22 @@
+<#
+.SYNOPSIS
+    Configures SSL trust for various applications to trust the Zscaler Root CA.
+
+.DESCRIPTION
+    This script performs a series of steps to ensure the Zscaler Root CA is trusted by the system and various applications such as Java, Ruby, PowerShell, AWS CLI, Boto (Python SDK), and Azure CLI.
+
+.NOTES
+    Author: Brandon Shay
+    Date: Jan 31, 2025
+#>
+
 # Set Execution Policy to Allow Script Execution
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
 # Start Execution Timer
 $startTime = Get-Date
 
-# Configuration
+# Configuration variables
 $certName = "Zscaler Root CA"
 $certExportPath = "$env:TEMP\zscaler-cert.cer"
 $logFile = "$env:TEMP\zscaler_ssl_log.txt"
@@ -47,7 +59,7 @@ try {
     exit 1
 }
 
-# Install Certificate into Windows Trusted Root Store (if not already present)
+# Install Certificate into Windows Trusted Root Store
 if (-not (Get-ChildItem -Path Cert:\LocalMachine\Root | Where-Object { $_.Subject -match $certName })) {
     Write-Host "Installing Zscaler certificate into the Windows Trusted Root Store..."
     try {
