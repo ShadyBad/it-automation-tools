@@ -1,116 +1,186 @@
 #!/bin/bash
 #
-# This script adds the Zscaler Root CA to various system and application-specific trust stores.
+# This script is used to configure SSL inspection on macOS for use with Zscaler.
+# It extracts the Zscaler certificate from the system keychain, and configures
+# various command-line tools to trust the certificate.
+#
+# The script is intended to be run as root, and will escalate privileges if
+# necessary.
 
-# Destination Path of the Zscaler Root CA certificate
-# This file is used as a temporary storage for the certificate
-CERT_PATH="/tmp/zscaler-root-ca.pem"
-
-# Ensure the certificate exists
-if [[ ! -f "$CERT_PATH" ]]; then
-    # Extract the Zscaler Root CA certificate from the macOS Keychain
-    echo "Extracting Zscaler Root CA certificate..."
-    security find-certificate -a -c "Zscaler" -p > "$CERT_PATH"
-else
-    echo "Certificate already exists. Skipping download."
+# Ensure the script runs as root
+if [[ $EUID -ne 0 ]]; then
+  echo "This script must be run as root. Attempting to escalate..."
+  exec sudo "$0" "$@"
+  exit 1
 fi
 
-# Verify certificate existence
-if [[ ! -f "$CERT_PATH" ]]; then
-    echo "Failed to find or create the certificate. Exiting."
+# Start Execution Timer
+START_TIME=$(date +%s)
+
+# Configuration
+CERT_NAME="Zscaler Root CA"
+CERT_PATH="/var/tmp/zscaler-cert.crt"
+LOG_FILE="$HOME/Library/Logs/kandji_zscaler_ssl.log"
+
+# Certificate trust locations
+DOCKER_CERT_PATH="/etc/ssl/certs"
+DOCKER_CERT_FILE="$DOCKER_CERT_PATH/zscaler.crt"
+NPM_CAFILE="/etc/ssl/cert.pem"
+PIP_CONF_PATH="$HOME/.pip/pip.conf"
+CURL_CA_BUNDLE="$HOME/.curl-ca-bundle.crt"
+GIT_SSL_CERT_PATH="/usr/local/share/ca-certificates"
+SNOWFLAKE_ODBC_CERT_PATH="/usr/local/share/ca-certificates"
+
+# Backup directory for configuration files
+BACKUP_DIR="$HOME/ssl_config_backup"
+mkdir -p "$BACKUP_DIR"
+
+# Redirect logs for Kandji
+exec > >(tee -a "$LOG_FILE") 2>&1
+echo "Starting Kandji Zscaler SSL configuration..."
+
+# macOS version check
+OS_VERSION=$(sw_vers -productVersion)
+if [[ "$OS_VERSION" < "10.15" ]]; then
+  echo "WARNING: This script is optimized for macOS 10.15+." >> "$LOG_FILE"
+fi
+
+# Internet connectivity check
+if ! ping -c 2 8.8.8.8 &> /dev/null; then
+  echo "ERROR: No internet connection detected. Exiting." >> "$LOG_FILE"
+  exit 1
+fi
+
+### Function: Extract Zscaler Certificate
+# Extracts the Zscaler certificate from the system keychain and writes it to a
+# specified path.
+extract_certificate_from_keychain() {
+  echo "Extracting Zscaler certificate from Keychain..."
+  security find-certificate -c "$CERT_NAME" -p /Library/Keychains/System.keychain > "$CERT_PATH" || {
+    echo "ERROR: Failed to extract Zscaler certificate." >> "$LOG_FILE"
     exit 1
-fi
-
-# Function to check if a command or software exists
-# @param $1 the command or software to check
-function command_exists {
-    command -v "$1" >/dev/null 2>&1
+  }
 }
 
-# Git
-# Configure git to trust the Zscaler Root CA
-if command_exists git; then
-    echo "Configuring Git to trust Zscaler Root CA..."
-    git config --global http.sslCAInfo "$CERT_PATH"
+### Function: Backup Configuration File
+# Backs up the specified configuration file to a backup directory.
+backup_config_file() {
+  local file=$1
+  if [[ -f "$file" ]]; then
+    echo "Backing up existing configuration file: $file"
+    cp "$file" "$BACKUP_DIR/$(basename "$file").bak"
+  fi
+}
+
+### Function: Append Setting If Not Already Present
+# Appends a specified entry to a file if it is not already present in the file.
+append_if_missing() {
+  local file=$1
+  local entry=$2
+  if grep -qxF "$entry" "$file" 2>/dev/null; then
+    echo "No changes needed for $file (already contains correct setting: $entry)"
+  else
+    echo "Modifying $file - Adding: $entry"
+    echo "$entry" >> "$file"
+  fi
+}
+
+# Extract Certificate if it exists
+if security find-certificate -c "$CERT_NAME" &>/dev/null; then
+  extract_certificate_from_keychain
 else
-    echo "Git not detected. Skipping."
+  echo "ERROR: Zscaler certificate not found in Keychain. Ensure it is installed before running this script."
+  exit 1
 fi
 
-# Python (pip and requests)
-# Append the Zscaler Root CA to the Python certifi store
-# and set the environment variables for SSL_CERT_FILE and REQUESTS_CA_BUNDLE
-if command_exists python3; then
-    PYTHON_CERTIFI=$(python3 -m certifi 2>/dev/null)
-    if [[ -n "$PYTHON_CERTIFI" ]]; then
-        echo "Appending Zscaler Root CA to Python certifi store..."
-        cat "$CERT_PATH" >> "$PYTHON_CERTIFI"
-        export SSL_CERT_FILE="$CERT_PATH"
-        export REQUESTS_CA_BUNDLE="$CERT_PATH"
-    else
-        echo "Python certifi package not detected. Skipping."
-    fi
+### Configure NPM
+# Configures NPM to use a custom CA file for SSL trust.
+if command -v npm &>/dev/null; then
+  echo "Configuring NPM SSL settings..."
+  backup_config_file "$HOME/.npmrc"
+  append_if_missing "$HOME/.npmrc" "cafile=$NPM_CAFILE"
 else
-    echo "Python not detected. Skipping."
+  echo "NPM is not installed. Skipping configuration."
 fi
 
-# Docker
-# Add the Zscaler Root CA to the Docker certificates
-if command_exists docker; then
-    echo "Adding Zscaler Root CA to Docker certificates..."
-    sudo mkdir -p /etc/docker/certs.d/
-    sudo cp "$CERT_PATH" /etc/docker/certs.d/
-    sudo update-ca-certificates
+### Configure PIP
+# Configures PIP to use a custom CA file for SSL trust.
+if command -v pip &>/dev/null; then
+  echo "Configuring PIP SSL settings..."
+  mkdir -p ~/.pip
+  backup_config_file "$PIP_CONF_PATH"
+  append_if_missing "$PIP_CONF_PATH" "[global]"
+  append_if_missing "$PIP_CONF_PATH" "cert = $NPM_CAFILE"
 else
-    echo "Docker not detected. Skipping."
+  echo "PIP is not installed. Skipping configuration."
 fi
 
-# Node.js (npm)
-# Configure npm to trust the Zscaler Root CA
-if command_exists npm; then
-    echo "Configuring npm to trust Zscaler Root CA..."
-    npm config set cafile "$CERT_PATH"
+### Configure Docker
+# Configures Docker to trust the Zscaler certificate.
+if command -v docker &>/dev/null; then
+  if [[ -f "$DOCKER_CERT_FILE" ]]; then
+    echo "Docker SSL certificate is already configured."
+  else
+    echo "Configuring Docker SSL settings..."
+    mkdir -p "$DOCKER_CERT_PATH"
+    cp "$CERT_PATH" "$DOCKER_CERT_FILE"
+    chmod 644 "$DOCKER_CERT_FILE"
+    echo "Docker now trusts the Zscaler certificate."
+  fi
 else
-    echo "Node.js/npm not detected. Skipping."
+  echo "Docker is not installed. Skipping configuration."
 fi
 
-# Java (Keytool)
-# Add the Zscaler Root CA to the Java trust store
-if command_exists keytool; then
-    echo "Adding Zscaler Root CA to Java trust store..."
-    JAVA_CACERTS=$(find /Library/Java/JavaVirtualMachines -name cacerts | head -n 1)
-    if [[ -n "$JAVA_CACERTS" ]]; then
-        sudo keytool -importcert -trustcacerts -file "$CERT_PATH" -keystore "$JAVA_CACERTS" -storepass changeit -noprompt
-    else
-        echo "Java keystore (cacerts) not found. Skipping."
-    fi
+### Configure cURL (Per-User Certificate)
+# Configures cURL to use a custom CA bundle for SSL trust.
+if command -v curl &>/dev/null; then
+  echo "Configuring cURL SSL settings..."
+  cp "$CERT_PATH" "$CURL_CA_BUNDLE"
+  append_if_missing "$HOME/.zshrc" "export CURL_CA_BUNDLE=$CURL_CA_BUNDLE"
+  echo "cURL is now using a custom CA bundle for SSL trust."
 else
-    echo "Java keytool not detected. Skipping."
+  echo "cURL is not installed. Skipping configuration."
 fi
 
-# # Mozilla Firefox
-# # Add the Zscaler Root CA to Firefox profiles
-# if [[ -d ~/Library/Application\ Support/Firefox/Profiles ]]; then
-#     echo "Adding Zscaler Root CA to Firefox profiles..."
-#     for PROFILE in ~/Library/Application\ Support/Firefox/Profiles/*; do
-#         certutil -A -n "Zscaler Root CA" -t "TCu,Cu,Tu" -i "$CERT_PATH" -d sql:"$PROFILE"
-#     done
-# else
-#     echo "Firefox profiles not found. Skipping."
-# fi
-
-# Curl
-# Configure Curl to use the Zscaler Root CA
-if command_exists curl; then
-    echo "Configuring Curl to use Zscaler Root CA..."
-    echo "CAINFO=$CERT_PATH" >> ~/.curlrc
+### Configure Git
+# Configures Git to use a custom CA file for SSL trust.
+if command -v git &>/dev/null; then
+  if git config --global --get http.sslCAinfo | grep -q "$GIT_SSL_CERT_PATH"; then
+    echo "Git SSL certificate is already configured."
+  else
+    echo "Configuring Git SSL settings..."
+    cp "$CERT_PATH" "$GIT_SSL_CERT_PATH"
+    git config --global http.sslCAinfo "$GIT_SSL_CERT_PATH/$(basename "$CERT_PATH")"
+    echo "Git now trusts the Zscaler certificate."
+  fi
 else
-    echo "Curl not detected. Skipping."
+  echo "Git is not installed. Skipping configuration."
 fi
 
-# System-Wide Environment Variables (Optional)
-echo "Setting global environment variables for SSL_CERT_FILE, REQUESTS_CA_BUNDLE, and removing temporary file..."
-sudo sh -c "echo 'export SSL_CERT_FILE=$CERT_PATH' >> /etc/environment"
-sudo sh -c "echo 'export REQUESTS_CA_BUNDLE=$CERT_PATH' >> /etc/environment"
-rm -f "$CERT_PATH"
+### Configure Snowflake ODBC
+# Configures Snowflake ODBC to trust the Zscaler certificate.
+if [[ -d "$SNOWFLAKE_ODBC_CERT_PATH" ]]; then
+  if [[ -f "$SNOWFLAKE_ODBC_CERT_PATH/zscaler.crt" ]]; then
+    echo "Snowflake ODBC SSL certificate is already configured."
+  else
+    echo "Configuring Snowflake ODBC SSL settings..."
+    cp "$CERT_PATH" "$SNOWFLAKE_ODBC_CERT_PATH"
+    echo "Snowflake ODBC now trusts the Zscaler certificate."
+  fi
+else
+  echo "Snowflake ODBC Driver is not installed. Skipping configuration."
+fi
 
-echo "Certificate deployment completed."
+### Cleanup Temporary Files
+# Removes temporary certificate files.
+if [[ -f "$CERT_PATH" ]]; then
+  echo "Cleaning up temporary certificate file..."
+  rm -f "$CERT_PATH"
+fi
+
+# End Execution Timer and Log Duration
+END_TIME=$(date +%s)
+ELAPSED_TIME=$((END_TIME - START_TIME))
+echo "Script completed in $ELAPSED_TIME seconds." >> "$LOG_FILE"
+
+echo "SSL Inspection configuration complete."
