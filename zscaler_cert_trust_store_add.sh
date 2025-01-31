@@ -4,8 +4,7 @@
 # It extracts the Zscaler certificate from the system keychain, and configures
 # various command-line tools to trust the certificate.
 #
-# The script is intended to be run as root, and will escalate privileges if
-# necessary.
+# The script is intended to be run as root, and will escalate privileges if necessary.
 
 # Ensure the script runs as root
 if [[ $EUID -ne 0 ]]; then
@@ -14,26 +13,30 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Set HOME for correct Git execution
+export HOME="/var/root"
+
 # Start Execution Timer
 START_TIME=$(date +%s)
 
 # Configuration
 CERT_NAME="Zscaler Root CA"
 CERT_PATH="/var/tmp/zscaler-cert.crt"
-LOG_FILE="$HOME/Library/Logs/kandji_zscaler_ssl.log"
+LOG_FILE="/var/tmp/kandji_zscaler_ssl.log"
 
 # Certificate trust locations
+BACKUP_DIR="/var/tmp/ssl_config_backup"
 DOCKER_CERT_PATH="/etc/ssl/certs"
 DOCKER_CERT_FILE="$DOCKER_CERT_PATH/zscaler.crt"
 NPM_CAFILE="/etc/ssl/cert.pem"
 PIP_CONF_PATH="$HOME/.pip/pip.conf"
-CURL_CA_BUNDLE="$HOME/.curl-ca-bundle.crt"
+CURL_CA_BUNDLE="$HOME/.ssl_certs/zscaler-ca.crt"
 GIT_SSL_CERT_PATH="/usr/local/share/ca-certificates"
 SNOWFLAKE_ODBC_CERT_PATH="/usr/local/share/ca-certificates"
 
-# Backup directory for configuration files
-BACKUP_DIR="$HOME/ssl_config_backup"
+# Ensure writable directories exist
 mkdir -p "$BACKUP_DIR"
+mkdir -p "$(dirname "$CURL_CA_BUNDLE")"
 
 # Redirect logs for Kandji
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -52,8 +55,6 @@ if ! ping -c 2 8.8.8.8 &> /dev/null; then
 fi
 
 ### Function: Extract Zscaler Certificate
-# Extracts the Zscaler certificate from the system keychain and writes it to a
-# specified path.
 extract_certificate_from_keychain() {
   echo "Extracting Zscaler certificate from Keychain..."
   security find-certificate -c "$CERT_NAME" -p /Library/Keychains/System.keychain > "$CERT_PATH" || {
@@ -63,7 +64,6 @@ extract_certificate_from_keychain() {
 }
 
 ### Function: Backup Configuration File
-# Backs up the specified configuration file to a backup directory.
 backup_config_file() {
   local file=$1
   if [[ -f "$file" ]]; then
@@ -73,12 +73,11 @@ backup_config_file() {
 }
 
 ### Function: Append Setting If Not Already Present
-# Appends a specified entry to a file if it is not already present in the file.
 append_if_missing() {
   local file=$1
   local entry=$2
   if grep -qxF "$entry" "$file" 2>/dev/null; then
-    echo "No changes needed for $file (already contains correct setting: $entry)"
+    echo "No changes needed for $file (already contains: $entry)"
   else
     echo "Modifying $file - Adding: $entry"
     echo "$entry" >> "$file"
@@ -94,7 +93,6 @@ else
 fi
 
 ### Configure NPM
-# Configures NPM to use a custom CA file for SSL trust.
 if command -v npm &>/dev/null; then
   echo "Configuring NPM SSL settings..."
   backup_config_file "$HOME/.npmrc"
@@ -104,7 +102,6 @@ else
 fi
 
 ### Configure PIP
-# Configures PIP to use a custom CA file for SSL trust.
 if command -v pip &>/dev/null; then
   echo "Configuring PIP SSL settings..."
   mkdir -p ~/.pip
@@ -116,7 +113,6 @@ else
 fi
 
 ### Configure Docker
-# Configures Docker to trust the Zscaler certificate.
 if command -v docker &>/dev/null; then
   if [[ -f "$DOCKER_CERT_FILE" ]]; then
     echo "Docker SSL certificate is already configured."
@@ -132,18 +128,20 @@ else
 fi
 
 ### Configure cURL (Per-User Certificate)
-# Configures cURL to use a custom CA bundle for SSL trust.
 if command -v curl &>/dev/null; then
   echo "Configuring cURL SSL settings..."
   cp "$CERT_PATH" "$CURL_CA_BUNDLE"
-  append_if_missing "$HOME/.zshrc" "export CURL_CA_BUNDLE=$CURL_CA_BUNDLE"
+
+  # Ensure .zshrc is modified in the correct location
+  ZSHRC_FILE="$HOME/.zshrc"
+  append_if_missing "$ZSHRC_FILE" "export CURL_CA_BUNDLE=$CURL_CA_BUNDLE"
+
   echo "cURL is now using a custom CA bundle for SSL trust."
 else
   echo "cURL is not installed. Skipping configuration."
 fi
 
 ### Configure Git
-# Configures Git to use a custom CA file for SSL trust.
 if command -v git &>/dev/null; then
   if git config --global --get http.sslCAinfo | grep -q "$GIT_SSL_CERT_PATH"; then
     echo "Git SSL certificate is already configured."
@@ -158,7 +156,6 @@ else
 fi
 
 ### Configure Snowflake ODBC
-# Configures Snowflake ODBC to trust the Zscaler certificate.
 if [[ -d "$SNOWFLAKE_ODBC_CERT_PATH" ]]; then
   if [[ -f "$SNOWFLAKE_ODBC_CERT_PATH/zscaler.crt" ]]; then
     echo "Snowflake ODBC SSL certificate is already configured."
@@ -172,7 +169,6 @@ else
 fi
 
 ### Cleanup Temporary Files
-# Removes temporary certificate files.
 if [[ -f "$CERT_PATH" ]]; then
   echo "Cleaning up temporary certificate file..."
   rm -f "$CERT_PATH"
