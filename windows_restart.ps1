@@ -1,14 +1,19 @@
-# --- Configuration ---
-$RestartIntervalDays = 7
-$RestartTimeHour = 18 # 6 PM in 24-hour format
-$RestartTimeMinute = 30
 param(
-    [string]$LogFilePath = $env:LOG_FILE_PATH -or "C:\Scripts\RestartLog.txt" # Default to environment variable or fallback
+    [string]$LogFilePath = "C:\Scripts\RestartLog.txt"
 )
+# Check if the environment variable exists and override if it does
+if ($env:LOG_FILE_PATH) {
+    $LogFilePath = $env:LOG_FILE_PATH
+}
+
+# --- Configuration ---
+$RestartIntervalDays = 0
+$RestartTimeHour = 10
+$RestartTimeMinute = 16
 $NotificationTitle = "Automated Restart"
 $NotificationBody = "This computer will restart in 60 seconds for performance improvements. Please save your work."
-$ShutdownTimeoutSeconds = 60 # Time to wait for applications to close gracefully
-$SleepDurationSeconds = 60   # Duration to pause before initiating restart (configurable)
+$ShutdownTimeoutSeconds = 60
+$SleepDurationSeconds = 60
 
 # --- Functions ---
 
@@ -94,20 +99,22 @@ function Show-Notification {
 }
 
 function Initiate-Restart {
+    # Keep the parameter block as is for now, though -Timeout isn't used by Restart-Computer the same way.
     param(
         [Parameter(Mandatory=$true)]
-        [int]$Timeout # in seconds
+        [int]$Timeout # Parameter remains, but less relevant for Restart-Computer -Force
     )
     try {
-        Write-Log -LogMessage "Attempting graceful shutdown with a timeout of $($Timeout) seconds."
-        Stop-Computer -Force -Timeout $Timeout
+        # Use Restart-Computer instead
+        Write-Log -LogMessage "Attempting graceful restart with forced application close."
+        Restart-Computer -Force
+        # If the command succeeds, the script likely terminates here as the OS restarts.
+        # This next log message might only appear if Restart-Computer fails immediately.
         Write-Log -LogMessage "Restart command initiated."
     } catch {
         Write-Log -LogMessage "Error initiating restart: $($_.Exception.Message)"
-        # Consider adding more specific error handling here if needed
     }
 }
-
 # --- Main Script ---
 Write-Log -LogMessage "Script started at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'). Purpose: Automated system restart check."
 
