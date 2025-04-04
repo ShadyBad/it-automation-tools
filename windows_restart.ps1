@@ -7,9 +7,9 @@ if ($env:LOG_FILE_PATH) {
 }
 
 # --- Configuration ---
-$RestartIntervalDays = 0
-$RestartTimeHour = 10
-$RestartTimeMinute = 16
+$RestartIntervalDays = 7
+$RestartTimeHour = 18
+$RestartTimeMinute = 00
 $NotificationTitle = "Automated Restart"
 $NotificationBody = "This computer will restart in 60 seconds for performance improvements. Please save your work."
 $ShutdownTimeoutSeconds = 60
