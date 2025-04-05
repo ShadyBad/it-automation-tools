@@ -1,3 +1,72 @@
+<#
+Automates system restart checks and initiates a restart if the configured interval has been reached.
+
+.DESCRIPTION
+This script checks the last system restart time and compares it to a configurable interval (in days). 
+If the interval has been exceeded, it notifies the user and initiates a system restart after a configurable delay. 
+The script logs all actions and errors to a specified log file.
+
+.PARAMETER LogFilePath
+Specifies the path to the log file where script actions and errors will be recorded. 
+Defaults to "C:\Scripts\RestartLog.txt". Can be overridden by the environment variable LOG_FILE_PATH.
+
+.PARAMETER RestartIntervalDays
+Specifies the number of days between restarts. Defaults to 7 days.
+
+.PARAMETER RestartTimeHour
+Specifies the hour of the day when the restart should occur. Defaults to 18 (6 PM).
+
+.PARAMETER RestartTimeMinute
+Specifies the minute of the hour when the restart should occur. Defaults to 00.
+
+.PARAMETER NotificationTitle
+Specifies the title of the notification displayed to the user before the restart. Defaults to "Automated Restart".
+
+.PARAMETER NotificationBody
+Specifies the body of the notification displayed to the user before the restart. 
+Defaults to "This computer will restart in 60 seconds for performance improvements. Please save your work."
+
+.PARAMETER ShutdownTimeoutSeconds
+Specifies the timeout in seconds before the system restart is initiated. Defaults to 60 seconds.
+
+.PARAMETER SleepDurationSeconds
+Specifies the duration in seconds to wait after notifying the user before initiating the restart. Defaults to 60 seconds.
+
+.FUNCTIONS
+Write-Log
+Logs messages to the specified log file. Creates the log directory if it does not exist.
+
+Get-LastRestartTime
+Retrieves the last system restart time using the Win32_OperatingSystem CIM class.
+
+Should-Restart
+Determines if a restart is needed based on the last restart time and the configured interval.
+
+Show-Notification
+Displays a notification to the user. Uses the BurntToast module if available, otherwise falls back to a message box.
+
+Initiate-Restart
+Initiates a system restart using the Restart-Computer cmdlet with the -Force parameter.
+
+.NOTES
+- Requires administrative privileges to execute.
+- The BurntToast module is optional but recommended for better notification support.
+- Ensure the log file path is accessible and writable by the script.
+
+.EXAMPLE
+.\windows_restart.ps1
+Runs the script with default parameters, checking if a restart is needed and initiating it if the interval has been exceeded.
+
+.EXAMPLE
+.\windows_restart.ps1 -LogFilePath "D:\Logs\RestartLog.txt"
+Runs the script with a custom log file path.
+
+.EXAMPLE
+$env:LOG_FILE_PATH = "D:\Logs\CustomLog.txt"
+.\windows_restart.ps1
+Overrides the default log file path using an environment variable.
+
+#>
 param(
     [string]$LogFilePath = "C:\Scripts\RestartLog.txt"
 )
