@@ -1,6 +1,6 @@
 # IT Automation Tools
 
-This repository offers a suite of Python-based automation tools designed to streamline various IT tasks, enhancing efficiency and productivity.
+This repository offers a suite of Python and Powershell-based tools designed to streamline various IT tasks, enhancing efficiency and productivity.
 
 ## Tools Included
 
